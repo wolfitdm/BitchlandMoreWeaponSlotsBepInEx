@@ -4,6 +4,7 @@ using BepInEx.Logging;
 using BepInEx.Unity.Mono;
 using HarmonyLib;
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -149,11 +150,14 @@ namespace BitchlandMoreWeaponSlotsBepInEx
                 Logger.LogError(ex.ToString());
             }
         }
-		
-		public static void PatchHarmonyMethodUnity(Type originalClass, string originalMethodName, string patchedMethodName, bool usePrefix, bool usePostfix, Type[] parameters = null)
+
+        public static void PatchHarmonyMethodUnity(Type originalClass, string originalMethodName, string patchedMethodName, bool usePrefix, bool usePostfix, Type[] parameters = null)
         {
+            string uniqueId = "com.wolfitdm.BitchlandMoreWeaponSlotsBepInEx";
+            Type uniqueType = typeof(BitchlandMoreWeaponSlotsBepInEx);
+
             // Create a new Harmony instance with a unique ID
-            var harmony = new Harmony("com.wolfitdm.BitchlandMoreWeaponSlotsBepInEx");
+            var harmony = new Harmony(uniqueId);
 
             if (originalClass == null)
             {
@@ -161,24 +165,16 @@ namespace BitchlandMoreWeaponSlotsBepInEx
                 return;
             }
 
-            // Or apply patches manually
-            MethodInfo original = null;
+            MethodInfo patched = null;
 
-            if (parameters == null)
+            try
             {
-                original = AccessTools.Method(originalClass, originalMethodName);
-            } else
-            {
-                original = AccessTools.Method(originalClass, originalMethodName, parameters);
+                patched = AccessTools.Method(uniqueType, patchedMethodName);
             }
-
-            if (original == null)
+            catch (Exception ex)
             {
-                Logger.LogInfo($"AccessTool.Method original {originalMethodName} == null");
-                return;
+                patched = null;
             }
-
-            MethodInfo patched = AccessTools.Method(typeof(BitchlandMoreWeaponSlotsBepInEx), patchedMethodName);
 
             if (patched == null)
             {
@@ -187,8 +183,96 @@ namespace BitchlandMoreWeaponSlotsBepInEx
 
             }
 
+            // Or apply patches manually
+            MethodInfo original = null;
+
+            try
+            {
+                if (parameters == null)
+                {
+                    original = AccessTools.Method(originalClass, originalMethodName);
+                }
+                else
+                {
+                    original = AccessTools.Method(originalClass, originalMethodName, parameters);
+                }
+            }
+            catch (AmbiguousMatchException ex)
+            {
+                Type[] nullParameters = new Type[] { };
+                try
+                {
+                    if (patched == null)
+                    {
+                        parameters = nullParameters;
+                    }
+
+                    ParameterInfo[] parameterInfos = patched.GetParameters();
+
+                    if (parameterInfos == null || parameterInfos.Length == 0)
+                    {
+                        parameters = nullParameters;
+                    }
+
+                    List<Type> parametersN = new List<Type>();
+
+                    for (int i = 0; i < parameterInfos.Length; i++)
+                    {
+                        ParameterInfo parameterInfo = parameterInfos[i];
+
+                        if (parameterInfo == null)
+                        {
+                            continue;
+                        }
+
+                        if (parameterInfo.Name == null)
+                        {
+                            continue;
+                        }
+
+                        if (parameterInfo.Name.StartsWith("__"))
+                        {
+                            continue;
+                        }
+
+                        Type type = parameterInfos[i].ParameterType;
+
+                        if (type == null)
+                        {
+                            continue;
+                        }
+
+                        parametersN.Add(type);
+                    }
+
+                    parameters = parametersN.ToArray();
+                }
+                catch (Exception ex2)
+                {
+                    parameters = nullParameters;
+                }
+
+                try
+                {
+                    original = AccessTools.Method(originalClass, originalMethodName, parameters);
+                }
+                catch (Exception ex2)
+                {
+                    original = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                original = null;
+            }
+
+            if (original == null)
+            {
+                Logger.LogInfo($"AccessTool.Method original {originalMethodName} == null");
+                return;
+            }
+
             HarmonyMethod patchedMethod = new HarmonyMethod(patched);
-			
             var prefixMethod = usePrefix ? patchedMethod : null;
             var postfixMethod = usePostfix ? patchedMethod : null;
 
@@ -196,7 +280,6 @@ namespace BitchlandMoreWeaponSlotsBepInEx
                 prefix: prefixMethod,
                 postfix: postfixMethod);
         }
-
         public static bool WeaponSystem_SetActiveWeapon(object __instance, int index)
         {
             if (!enableMe)
